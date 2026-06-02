@@ -89,7 +89,7 @@
   .band .db{font-family:'Space Mono';font-size:9px;color:var(--c1);min-height:12px;}
 
   .tabs{display:flex;gap:6px;margin:4px 0 14px;padding:5px;border-radius:16px;}
-  .tab{flex:1;text-align:center;padding:10px 0;font-size:12px;font-weight:600;color:var(--muted);border-radius:11px;cursor:pointer;border:none;background:transparent;}
+  .tab{flex:1;text-align:center;padding:10px 2px;font-size:11px;font-weight:600;color:var(--muted);border-radius:11px;cursor:pointer;border:none;background:transparent;white-space:nowrap;}
   .tab.active{background:linear-gradient(135deg,var(--c1),var(--c2));color:#0a0e17;}
 
   .qhead{display:flex;justify-content:space-between;align-items:center;margin:6px 2px 12px;}
@@ -203,7 +203,7 @@
     <button class="tab active" data-view="songs">Songs</button>
     <button class="tab" data-view="artists">Artists</button>
     <button class="tab" data-view="albums">Albums</button>
-    <button class="tab" data-view="playlists">Lists</button>
+    <button class="tab" data-view="playlists">Playlists</button>
   </div>
 
   <div class="search-wrap">
@@ -412,6 +412,7 @@ function render(){
   const area=$('viewArea'); area.innerHTML='';
   updateStorage();
   if(!has)return;
+  if(drill&&drill.type==='playlist'){renderPlaylists(area);return;}
   if(drill){renderDrill(area);return;}
   if(view==='songs'){
     $('viewTitle').textContent=searchQ?'Results':'Songs';
@@ -430,7 +431,7 @@ function renderPlaylists(area){
   if(drill&&drill.type==='playlist'){
     $('viewTitle').textContent=drill.key;
     const back=document.createElement('button');back.className='back';
-    back.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg> Back to Lists`;
+    back.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg> Back to Playlists`;
     back.onclick=()=>{drill=null;render();};
     area.appendChild(back);
     const ids=(playlists[drill.key]||[]).map(id=>tracks.findIndex(t=>t.id===id)).filter(i=>i>=0&&matchesSearch(tracks[i]));
