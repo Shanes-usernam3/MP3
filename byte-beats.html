@@ -284,20 +284,59 @@ function buildPresetsActive(){document.querySelectorAll('.preset').forEach(p=>p.
 $('eqToggle').onclick=function(){eqOn=!eqOn;this.classList.toggle('on',eqOn);this.textContent=eqOn?'On':'Off';applyEq();};
 buildEq();
 
+/* ---------- IndexedDB persistence ---------- */
+let db=null;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('bytebeats',1);
+    r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('songs'))d.createObjectStore('songs',{keyPath:'id'});};
+    r.onsuccess=e=>{db=e.target.result;res(db);};
+    r.onerror=e=>rej(e);
+  });
+}
+function dbPut(rec){return new Promise((res,rej)=>{const tx=db.transaction('songs','readwrite');tx.objectStore('songs').put(rec);tx.oncomplete=res;tx.onerror=rej;});}
+function dbDelete(id){return new Promise((res,rej)=>{const tx=db.transaction('songs','readwrite');tx.objectStore('songs').delete(id);tx.oncomplete=res;tx.onerror=rej;});}
+function dbAll(){return new Promise((res,rej)=>{const tx=db.transaction('songs','readonly');const rq=tx.objectStore('songs').getAll();rq.onsuccess=()=>res(rq.result||[]);rq.onerror=rej;});}
+
+/* build a track object from a stored record (blob) */
+function trackFromRecord(rec){
+  const url=URL.createObjectURL(rec.blob);
+  const t={id:rec.id,name:rec.name,url,dur:rec.dur||0,artist:rec.artist||UNK_A,album:rec.album||UNK_AL,title:rec.title||'',art:rec.art||''};
+  if(!t.dur){const a=new Audio(url);a.addEventListener('loadedmetadata',()=>{t.dur=a.duration;dbPut({...rec,dur:a.duration});render();});}
+  return t;
+}
+
+async function loadLibrary(){
+  try{
+    await openDB();
+    const recs=await dbAll();
+    recs.sort((a,b)=>(a.added||0)-(b.added||0));
+    tracks=recs.map(trackFromRecord);
+    render();
+    if(cur===-1&&tracks.length)load(0,false,tracks.map((_,i)=>i));
+  }catch(err){console.warn('Library load failed',err);}
+}
+
 /* ---------- library / playback ---------- */
 $('addBtn').onclick=()=>$('fileInput').click();
-$('fileInput').onchange=e=>{
+$('fileInput').onchange=async e=>{
+  if(!db){try{await openDB();}catch(_){}}
   [...e.target.files].forEach(f=>{
+    const id='s_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
     const url=URL.createObjectURL(f);
-    const t={name:f.name.replace(/\.[^.]+$/,''),url,dur:0,artist:UNK_A,album:UNK_AL,title:'',art:''};
+    const t={id,name:f.name.replace(/\.[^.]+$/,''),url,dur:0,artist:UNK_A,album:UNK_AL,title:'',art:''};
     tracks.push(t);
+    const rec={id,blob:f,name:t.name,dur:0,artist:UNK_A,album:UNK_AL,title:'',art:'',added:Date.now()};
+    if(db)dbPut(rec).catch(()=>{});
     const a=new Audio(url);
-    a.addEventListener('loadedmetadata',()=>{t.dur=a.duration;render();});
+    a.addEventListener('loadedmetadata',()=>{t.dur=a.duration;rec.dur=a.duration;if(db)dbPut(rec).catch(()=>{});render();});
     if(window.jsmediatags){
       window.jsmediatags.read(f,{onSuccess:tag=>{
         const g=tag.tags||{};
         if(g.title)t.title=g.title; if(g.artist)t.artist=g.artist; if(g.album)t.album=g.album;
         if(g.picture){const d=g.picture.data;let bin='';for(let i=0;i<d.length;i++)bin+=String.fromCharCode(d[i]);t.art=`data:${g.picture.format};base64,${btoa(bin)}`;}
+        rec.title=t.title;rec.artist=t.artist;rec.album=t.album;rec.art=t.art;
+        if(db)dbPut(rec).catch(()=>{});
         render();
       },onError:()=>render()});
     }
@@ -357,7 +396,7 @@ function songRow(t,i,context){
   li.querySelector('.del').onclick=ev=>{ev.stopPropagation();del(i);};
   return li;
 }
-function del(i){URL.revokeObjectURL(tracks[i].url);tracks.splice(i,1);if(i===cur){audio.pause();cur=-1;resetNP();}else if(i<cur)cur--;render();}
+function del(i){const t=tracks[i];URL.revokeObjectURL(t.url);if(t.id&&db)dbDelete(t.id).catch(()=>{});tracks.splice(i,1);if(i===cur){audio.pause();cur=-1;resetNP();}else if(i<cur)cur--;render();}
 function resetNP(){$('npTitle').textContent='Nothing playing';$('npMeta').textContent='Add files to begin';$('art').style.backgroundImage='';$('art').innerHTML='&#9834;';$('fill').style.width='0%';$('knob').style.left='0%';$('cur').textContent='0:00';$('dur').textContent='0:00';setPlayIcon(false);}
 
 function load(i,play,context){
@@ -409,6 +448,6 @@ $('vol').oninput=e=>audio.volume=e.target.value;
 document.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();$('playBtn').click();}if(e.code==='ArrowRight')audio.currentTime+=5;if(e.code==='ArrowLeft')audio.currentTime-=5;});
 
 resetNP();
-</script>
+loadLibrary();</script>
 </body>
 </html>
