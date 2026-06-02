@@ -117,6 +117,33 @@
   .empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:13px;line-height:1.7;}
   .empty b{color:var(--text);font-weight:700;display:block;font-size:16px;margin-bottom:8px;}
   .back{display:inline-flex;align-items:center;gap:6px;color:var(--c1);background:none;border:none;font-family:'Space Mono';font-size:12px;cursor:pointer;margin-bottom:12px;}
+
+  /* search */
+  .search-wrap{position:relative;margin:0 0 14px;}
+  .search-wrap svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);}
+  #search{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:13px;color:var(--text);
+    font-family:'Sora';font-size:13px;padding:11px 13px 11px 40px;outline:none;}
+  #search:focus{border-color:var(--c1);}
+  #search::placeholder{color:var(--muted);}
+
+  /* storage indicator */
+  .storage{display:flex;align-items:center;gap:10px;margin:0 2px 16px;font-family:'Space Mono';font-size:10px;color:var(--muted);}
+  .storage .track{flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;}
+  .storage .fillbar{height:100%;width:0%;background:linear-gradient(90deg,var(--c1),var(--c2));border-radius:99px;transition:width .4s;}
+
+  /* playlist add menu */
+  .plus-pl{color:var(--muted);background:none;border:none;cursor:pointer;font-size:15px;padding:4px 6px;flex:none;}
+  .plus-pl:active{color:var(--c2);}
+  .sheet{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:none;align-items:flex-end;backdrop-filter:blur(3px);}
+  .sheet.open{display:flex;}
+  .sheet-inner{background:#11151f;border:1px solid var(--line);border-radius:22px 22px 0 0;width:100%;padding:20px 18px 30px;max-height:70vh;overflow:auto;}
+  .sheet-inner h4{font-size:15px;font-weight:700;margin-bottom:14px;}
+  .pl-opt{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:13px;background:var(--panel);margin-bottom:8px;cursor:pointer;font-size:13px;}
+  .pl-new{display:flex;gap:8px;margin-bottom:8px;}
+  .pl-new input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--text);font-family:'Sora';font-size:13px;padding:11px 13px;outline:none;}
+  .pl-new input:focus{border-color:var(--c2);}
+  .pl-new button{background:linear-gradient(135deg,var(--c1),var(--c2));color:#0a0e17;border:none;font-weight:700;border-radius:11px;padding:0 16px;cursor:pointer;}
+  .sheet-close{width:100%;text-align:center;color:var(--muted);background:none;border:none;font-family:'Space Mono';font-size:12px;padding:14px;cursor:pointer;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -176,11 +203,22 @@
     <button class="tab active" data-view="songs">Songs</button>
     <button class="tab" data-view="artists">Artists</button>
     <button class="tab" data-view="albums">Albums</button>
+    <button class="tab" data-view="playlists">Lists</button>
+  </div>
+
+  <div class="search-wrap">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="search" type="text" placeholder="Search songs, artists, albums">
   </div>
 
   <div class="qhead">
     <h2 id="viewTitle">Songs</h2>
     <button class="add" id="addBtn">+ Add files</button>
+  </div>
+
+  <div class="storage" id="storage" style="display:none">
+    <span id="storageText">—</span>
+    <div class="track"><div class="fillbar" id="storageFill"></div></div>
   </div>
 
   <div id="viewArea"></div>
@@ -189,12 +227,28 @@
   <input type="file" id="fileInput" accept="audio/*" multiple hidden>
 </main>
 
+<div class="sheet" id="sheet">
+  <div class="sheet-inner">
+    <h4>Add to playlist</h4>
+    <div class="pl-new">
+      <input id="newPlName" type="text" placeholder="New playlist name">
+      <button id="newPlBtn">Create</button>
+    </div>
+    <div id="plOpts"></div>
+    <button class="sheet-close" id="sheetClose">Cancel</button>
+  </div>
+</div>
+
 <audio id="audio" crossorigin="anonymous"></audio>
 
 <script>
 const $ = s => document.getElementById(s);
 const audio = $('audio');
 let tracks=[], cur=-1, shuffle=false, repeat='off', order=[], view='songs', drill=null, queue=[];
+let playlists=JSON.parse(localStorage.getItem('bb_playlists')||'{}'); // {name:[trackId,...]}
+let searchQ='';
+let pendingPlTrack=null; // track id awaiting playlist assignment
+function savePlaylists(){localStorage.setItem('bb_playlists',JSON.stringify(playlists));}
 const fmt=t=>(isNaN(t)||!isFinite(t))?'0:00':`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 const UNK_A='Unknown Artist', UNK_AL='Unknown Album';
 
@@ -350,20 +404,65 @@ const disp=t=>t.title||t.name;
 const letter=s=>(s&&s[0]?s[0].toUpperCase():'&#9834;');
 function groupBy(key){const m={};tracks.forEach((t,i)=>{(m[t[key]]=m[t[key]]||[]).push(i);});return m;}
 
+function matchesSearch(t){if(!searchQ)return true;const q=searchQ.toLowerCase();return (disp(t)+' '+t.artist+' '+t.album).toLowerCase().includes(q);}
+
 function render(){
   const has=tracks.length>0;
   $('empty').style.display=has?'none':'block';
   const area=$('viewArea'); area.innerHTML='';
+  updateStorage();
   if(!has)return;
   if(drill){renderDrill(area);return;}
-  if(view==='songs'){$('viewTitle').textContent='Songs';const ul=document.createElement('ul');ul.className='list';tracks.forEach((t,i)=>ul.appendChild(songRow(t,i)));area.appendChild(ul);}
+  if(view==='songs'){
+    $('viewTitle').textContent=searchQ?'Results':'Songs';
+    const ul=document.createElement('ul');ul.className='list';
+    let n=0;
+    tracks.forEach((t,i)=>{if(matchesSearch(t)){ul.appendChild(songRow(t,i));n++;}});
+    if(n===0){area.innerHTML='<div class="empty" style="display:block">No matches</div>';return;}
+    area.appendChild(ul);
+  }
   else if(view==='artists'){$('viewTitle').textContent='Artists';renderGroups(area,groupBy('artist'),'artist');}
-  else{$('viewTitle').textContent='Albums';renderGroups(area,groupBy('album'),'album');}
+  else if(view==='albums'){$('viewTitle').textContent='Albums';renderGroups(area,groupBy('album'),'album');}
+  else if(view==='playlists'){renderPlaylists(area);}
+}
+
+function renderPlaylists(area){
+  if(drill&&drill.type==='playlist'){
+    $('viewTitle').textContent=drill.key;
+    const back=document.createElement('button');back.className='back';
+    back.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg> Back to Lists`;
+    back.onclick=()=>{drill=null;render();};
+    area.appendChild(back);
+    const ids=(playlists[drill.key]||[]).map(id=>tracks.findIndex(t=>t.id===id)).filter(i=>i>=0&&matchesSearch(tracks[i]));
+    if(!ids.length){area.insertAdjacentHTML('beforeend','<div class="empty" style="display:block">No songs in this playlist yet. Tap the + on any song to add it.</div>');return;}
+    const ul=document.createElement('ul');ul.className='list';
+    ids.forEach(i=>ul.appendChild(songRow(tracks[i],i,ids,drill.key)));
+    area.appendChild(ul);
+    return;
+  }
+  $('viewTitle').textContent='Playlists';
+  const names=Object.keys(playlists);
+  if(!names.length){area.innerHTML='<div class="empty" style="display:block"><b>No playlists yet</b>Tap the + beside any song to start one.</div>';return;}
+  const ul=document.createElement('ul');ul.className='list';
+  names.sort((a,b)=>a.localeCompare(b)).forEach(name=>{
+    const ids=playlists[name]||[];
+    const li=document.createElement('li');li.className='row';
+    li.innerHTML=`<div class="thumb">&#9835;</div>
+      <div class="info"><div class="name">${name}</div><div class="meta">${ids.length} song${ids.length!==1?'s':''}</div></div>
+      <button class="del" data-pl="${name}">&#215;</button>
+      <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>`;
+    li.onclick=ev=>{if(ev.target.closest('[data-pl]'))return;drill={type:'playlist',key:name};render();};
+    li.querySelector('[data-pl]').onclick=ev=>{ev.stopPropagation();if(confirm('Delete playlist "'+name+'"?')){delete playlists[name];savePlaylists();render();}};
+    ul.appendChild(li);
+  });
+  area.appendChild(ul);
 }
 function renderGroups(area,map,type){
   const ul=document.createElement('ul');ul.className='list';
   Object.keys(map).sort((a,b)=>a.localeCompare(b)).forEach(key=>{
-    const ids=map[key],cover=tracks[ids[0]].art;
+    const ids=map[key].filter(idx=>matchesSearch(tracks[idx]));
+    if(!ids.length)return;
+    const cover=tracks[ids[0]].art;
     const li=document.createElement('li');li.className='row';
     li.innerHTML=`<div class="thumb" style="${cover?`background-image:url('${cover}')`:''}">${cover?'':letter(key)}</div>
       <div class="info"><div class="name">${key}</div><div class="meta">${type==='album'?(tracks[ids[0]].artist+' &#183; '):''}${ids.length} song${ids.length>1?'s':''}</div></div>
@@ -384,19 +483,25 @@ function renderDrill(area){
   ids.forEach(i=>ul.appendChild(songRow(tracks[i],i,ids)));
   area.appendChild(ul);
 }
-function songRow(t,i,context){
+function songRow(t,i,context,plName){
   const li=document.createElement('li');li.className='row'+(i===cur?' playing':'');
   const cover=t.art, playingNow=i===cur&&!audio.paused;
   li.innerHTML=`${playingNow?'<div class="eqbars"><span></span><span></span><span></span></div>':`<div class="thumb" style="${cover?`background-image:url('${cover}')`:''}">${cover?'':letter(disp(t))}</div>`}
     <div class="info"><div class="name">${disp(t)}</div><div class="meta">${t.artist} &#183; ${t.album}</div></div>
     <div class="right">${fmt(t.dur)}</div>
-    <button class="del" data-i="${i}">&#215;</button>`;
+    <button class="plus-pl" data-add="${i}" title="Add to playlist">+</button>
+    <button class="del" data-i="${i}" title="${plName?'Remove from playlist':'Delete'}">&#215;</button>`;
   const ctx=context||tracks.map((_,k)=>k);
-  li.onclick=ev=>{if(ev.target.classList.contains('del'))return;load(i,true,ctx);};
-  li.querySelector('.del').onclick=ev=>{ev.stopPropagation();del(i);};
+  li.onclick=ev=>{if(ev.target.closest('.del')||ev.target.closest('.plus-pl'))return;load(i,true,ctx);};
+  li.querySelector('.plus-pl').onclick=ev=>{ev.stopPropagation();openSheet(t.id);};
+  li.querySelector('.del').onclick=ev=>{
+    ev.stopPropagation();
+    if(plName){playlists[plName]=(playlists[plName]||[]).filter(id=>id!==t.id);savePlaylists();render();}
+    else del(i);
+  };
   return li;
 }
-function del(i){const t=tracks[i];URL.revokeObjectURL(t.url);if(t.id&&db)dbDelete(t.id).catch(()=>{});tracks.splice(i,1);if(i===cur){audio.pause();cur=-1;resetNP();}else if(i<cur)cur--;render();}
+function del(i){const t=tracks[i];URL.revokeObjectURL(t.url);if(t.id&&db)dbDelete(t.id).catch(()=>{});if(t.id){Object.keys(playlists).forEach(n=>{playlists[n]=playlists[n].filter(id=>id!==t.id);});savePlaylists();}tracks.splice(i,1);if(i===cur){audio.pause();cur=-1;resetNP();}else if(i<cur)cur--;render();}
 function resetNP(){$('npTitle').textContent='Nothing playing';$('npMeta').textContent='Add files to begin';$('art').style.backgroundImage='';$('art').innerHTML='&#9834;';$('fill').style.width='0%';$('knob').style.left='0%';$('cur').textContent='0:00';$('dur').textContent='0:00';setPlayIcon(false);}
 
 function load(i,play,context){
@@ -407,17 +512,44 @@ function load(i,play,context){
   $('npMeta').textContent=`${t.artist} &#183; ${t.album}`;
   if(t.art){$('art').style.backgroundImage=`url('${t.art}')`;$('art').textContent='';}else{$('art').style.backgroundImage='';$('art').innerHTML=letter(disp(t));}
   if(play){initAudio();if(actx.state==='suspended')actx.resume();audio.play();}
+  setMediaSession(t);
   render();
 }
+
+/* ---------- Media Session (lock-screen controls) ---------- */
+function setMediaSession(t){
+  if(!('mediaSession' in navigator))return;
+  const meta={title:disp(t),artist:t.artist,album:t.album};
+  if(t.art)meta.artwork=[{src:t.art,sizes:'512x512',type:'image/png'}];
+  try{navigator.mediaSession.metadata=new MediaMetadata(meta);}catch(_){}
+}
+if('mediaSession' in navigator){
+  const ms=navigator.mediaSession;
+  ms.setActionHandler('play',()=>{initAudio();if(actx&&actx.state==='suspended')actx.resume();audio.play();});
+  ms.setActionHandler('pause',()=>audio.pause());
+  ms.setActionHandler('previoustrack',prevTrack);
+  ms.setActionHandler('nexttrack',()=>nextTrack(false));
+  ms.setActionHandler('seekto',d=>{if(d.seekTime!=null)audio.currentTime=d.seekTime;});
+  ms.setActionHandler('seekforward',()=>audio.currentTime=Math.min(audio.duration,audio.currentTime+10));
+  ms.setActionHandler('seekbackward',()=>audio.currentTime=Math.max(0,audio.currentTime-10));
+}
+function updatePositionState(){
+  if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
+  if(audio.duration&&isFinite(audio.duration)){
+    try{navigator.mediaSession.setPositionState({duration:audio.duration,playbackRate:audio.playbackRate||1,position:audio.currentTime});}catch(_){}
+  }
+}
+
 $('playBtn').onclick=()=>{
   if(cur===-1&&tracks.length){load(0,true,tracks.map((_,i)=>i));return;}
   initAudio(); if(actx.state==='suspended')actx.resume();
   audio.paused?audio.play():audio.pause();
 };
 function setPlayIcon(p){$('playIcon').innerHTML=p?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';}
-audio.onplay=()=>{setPlayIcon(true);render();};
-audio.onpause=()=>{setPlayIcon(false);render();};
+audio.onplay=()=>{setPlayIcon(true);if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';updatePositionState();render();};
+audio.onpause=()=>{setPlayIcon(false);if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';render();};
 audio.ontimeupdate=()=>{const p=audio.currentTime/audio.duration*100||0;$('fill').style.width=p+'%';$('knob').style.left=p+'%';$('cur').textContent=fmt(audio.currentTime);$('dur').textContent=fmt(audio.duration);};
+audio.onloadedmetadata=updatePositionState;
 audio.onended=()=>{if(repeat==='one'){audio.currentTime=0;audio.play();return;}nextTrack(true);};
 
 function ctxOrder(){return queue.length?queue:tracks.map((_,i)=>i);}
@@ -448,6 +580,52 @@ $('vol').oninput=e=>audio.volume=e.target.value;
 document.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();$('playBtn').click();}if(e.code==='ArrowRight')audio.currentTime+=5;if(e.code==='ArrowLeft')audio.currentTime-=5;});
 
 resetNP();
+
+/* ---------- search ---------- */
+$('search').oninput=e=>{searchQ=e.target.value.trim();render();};
+
+/* ---------- playlist bottom sheet ---------- */
+function openSheet(trackId){pendingPlTrack=trackId;buildSheet();$('sheet').classList.add('open');}
+function closeSheet(){$('sheet').classList.remove('open');pendingPlTrack=null;$('newPlName').value='';}
+function buildSheet(){
+  const box=$('plOpts');box.innerHTML='';
+  const names=Object.keys(playlists).sort((a,b)=>a.localeCompare(b));
+  if(!names.length){box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:6px 2px">No playlists yet — create one above.</div>';return;}
+  names.forEach(name=>{
+    const has=(playlists[name]||[]).includes(pendingPlTrack);
+    const d=document.createElement('div');d.className='pl-opt';
+    d.innerHTML=`<span style="flex:1">${name}</span><span style="color:${has?'var(--c1)':'var(--muted)'}">${has?'&#10003; Added':'+ Add'}</span>`;
+    d.onclick=()=>{addToPlaylist(name,pendingPlTrack);buildSheet();};
+    box.appendChild(d);
+  });
+}
+function addToPlaylist(name,id){
+  playlists[name]=playlists[name]||[];
+  if(!playlists[name].includes(id))playlists[name].push(id);
+  savePlaylists();
+  if(view==='playlists')render();
+}
+$('newPlBtn').onclick=()=>{
+  const n=$('newPlName').value.trim();if(!n)return;
+  if(!playlists[n])playlists[n]=[];
+  if(pendingPlTrack)addToPlaylist(n,pendingPlTrack);
+  $('newPlName').value='';buildSheet();
+};
+$('sheetClose').onclick=closeSheet;
+$('sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
+
+/* ---------- storage indicator ---------- */
+async function updateStorage(){
+  if(!navigator.storage||!navigator.storage.estimate)return;
+  try{
+    const {usage=0,quota=0}=await navigator.storage.estimate();
+    const mb=u=>u>=1073741824?(u/1073741824).toFixed(1)+' GB':(u/1048576).toFixed(0)+' MB';
+    $('storage').style.display=tracks.length?'flex':'none';
+    $('storageText').textContent=`${mb(usage)} used`;
+    $('storageFill').style.width=quota?Math.min(100,(usage/quota*100)).toFixed(1)+'%':'0%';
+  }catch(_){}
+}
+
 loadLibrary();</script>
 </body>
 </html>
