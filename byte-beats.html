@@ -144,6 +144,42 @@
   .pl-new input:focus{border-color:var(--c2);}
   .pl-new button{background:linear-gradient(135deg,var(--c1),var(--c2));color:#0a0e17;border:none;font-weight:700;border-radius:11px;padding:0 16px;cursor:pointer;}
   .sheet-close{width:100%;text-align:center;color:var(--muted);background:none;border:none;font-family:'Space Mono';font-size:12px;padding:14px;cursor:pointer;margin-top:6px;}
+
+  /* visualizer selector */
+  .viz-pick{display:flex;gap:6px;margin-top:10px;justify-content:center;flex-wrap:wrap;}
+  .viz-pick button{font-family:'Space Mono';font-size:10px;padding:5px 11px;border-radius:20px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;}
+  .viz-pick button.active{border-color:var(--c1);color:var(--c1);box-shadow:0 0 10px rgba(0,245,212,.22);}
+  .now .tap-hint{position:absolute;top:14px;right:16px;color:var(--muted);font-family:'Space Mono';font-size:9px;letter-spacing:1px;text-transform:uppercase;opacity:.7;}
+
+  /* fullscreen now-playing */
+  .fs{position:fixed;inset:0;z-index:60;background:var(--bg);transform:translateY(100%);transition:transform .32s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;padding:18px 22px calc(28px + env(safe-area-inset-bottom));overflow:hidden;}
+  .fs.open{transform:translateY(0);}
+  .fs::before{content:'';position:absolute;inset:0;z-index:-1;opacity:.5;
+    background:radial-gradient(700px 400px at 50% 0%, var(--fsglow,rgba(123,97,255,.3)), transparent 60%);transition:background .6s;}
+  .fs-top{display:flex;align-items:center;justify-content:space-between;}
+  .fs-top button{background:none;border:none;color:var(--text);cursor:pointer;padding:6px;}
+  .fs-top .lbl{font-family:'Space Mono';font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);}
+  .fs-art{flex:none;margin:18px auto 0;width:min(74vw,330px);aspect-ratio:1;border-radius:26px;
+    background:linear-gradient(135deg,var(--c1),var(--c2),var(--c3));background-size:cover;background-position:center;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:84px;color:#0a0e17;
+    box-shadow:0 30px 70px rgba(0,0,0,.5);}
+  .fs-viz{width:100%;height:60px;margin-top:14px;}
+  .fs-meta{margin-top:14px;text-align:center;}
+  .fs-meta .t{font-size:23px;font-weight:800;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fs-meta .m{color:var(--muted);font-family:'Space Mono';font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fs-prog{margin-top:18px;}
+  .fs-prog .bar{height:7px;}
+  .fs-controls{display:flex;align-items:center;justify-content:space-between;margin-top:22px;}
+  .fs-controls .ctrl svg{width:30px;height:30px;}
+  .fs-controls .play{width:74px;height:74px;}
+  .fs-controls .play svg{width:34px;height:34px;}
+  .fs-bottom{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:auto;padding-top:18px;}
+  .fs-queue-btn{font-family:'Space Mono';font-size:11px;color:var(--muted);background:none;border:1px solid var(--line);border-radius:20px;padding:8px 16px;cursor:pointer;}
+  .fs-queue{position:absolute;left:0;right:0;bottom:0;max-height:55%;background:#11151f;border-top:1px solid var(--line);
+    border-radius:22px 22px 0 0;padding:16px 16px 30px;transform:translateY(100%);transition:transform .3s;overflow:auto;z-index:2;}
+  .fs-queue.open{transform:translateY(0);}
+  .fs-queue h4{font-size:14px;font-weight:700;margin-bottom:12px;}
 </style>
 </head>
 <body>
@@ -156,14 +192,17 @@
 
 <main>
   <section class="now card">
-    <div class="np-top">
+    <div class="tap-hint">tap to expand</div>
+    <div class="np-top" id="miniOpen" style="cursor:pointer">
       <div class="art" id="art">&#9834;</div>
       <div style="min-width:0;flex:1;">
         <div class="np-title" id="npTitle">Nothing playing</div>
         <div class="np-meta" id="npMeta">Add files to begin</div>
       </div>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style="flex:none"><path d="m18 15-6-6-6 6"/></svg>
     </div>
     <canvas id="viz"></canvas>
+    <div class="viz-pick" id="vizPick"></div>
     <div class="prog-wrap">
       <div class="bar" id="bar"><div class="bar-fill" id="fill"></div><div class="bar-knob" id="knob"></div></div>
       <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
@@ -226,6 +265,38 @@
 
   <input type="file" id="fileInput" multiple hidden>
 </main>
+
+<div class="fs" id="fs">
+  <div class="fs-top">
+    <button id="fsClose" title="Close"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <span class="lbl">Now Playing</span>
+    <button id="fsAddPl" title="Add to playlist"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+  </div>
+  <div class="fs-art" id="fsArt">&#9834;</div>
+  <canvas class="fs-viz" id="fsViz"></canvas>
+  <div class="fs-meta">
+    <div class="t" id="fsTitle">Nothing playing</div>
+    <div class="m" id="fsMeta">&#8212;</div>
+  </div>
+  <div class="fs-prog">
+    <div class="bar" id="fsBar"><div class="bar-fill" id="fsFill"></div><div class="bar-knob" id="fsKnob"></div></div>
+    <div class="times"><span id="fsCur">0:00</span><span id="fsDur">0:00</span></div>
+  </div>
+  <div class="fs-controls">
+    <button class="ctrl small" id="fsShuffle" title="Shuffle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="M4 4l5 5"/></svg></button>
+    <button class="ctrl" id="fsPrev"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14h2V5H6zm3 7l11 7V5L9 12z"/></svg></button>
+    <button class="ctrl play" id="fsPlay"><svg id="fsPlayIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+    <button class="ctrl" id="fsNext"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5v14h2V5h-2zM4 19l11-7L4 5v14z"/></svg></button>
+    <button class="ctrl small" id="fsRepeat" title="Repeat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></button>
+  </div>
+  <div class="fs-bottom">
+    <button class="fs-queue-btn" id="fsQueueBtn">&#9776; Queue</button>
+  </div>
+  <div class="fs-queue" id="fsQueue">
+    <h4>Up Next</h4>
+    <ul class="list" id="fsQueueList"></ul>
+  </div>
+</div>
 
 <div class="sheet" id="sheet">
   <div class="sheet-inner">
@@ -290,25 +361,65 @@ function applyEq(){
 }
 
 /* visualizer */
+const VIZ_STYLES=['Bars','Wave','Mirror','Blocks','Off'];
+let vizStyle=localStorage.getItem('bb_viz')||'Bars';
 const canvas=$('viz'); const cctx=canvas.getContext('2d');
-function sizeCanvas(){const r=canvas.getBoundingClientRect();canvas.width=r.width*devicePixelRatio;canvas.height=r.height*devicePixelRatio;}
+const fsCanvas=$('fsViz'); const fsctx=fsCanvas.getContext('2d');
+function sizeCanvas(){
+  [[canvas,cctx],[fsCanvas,fsctx]].forEach(([c])=>{const r=c.getBoundingClientRect();if(r.width){c.width=r.width*devicePixelRatio;c.height=r.height*devicePixelRatio;}});
+}
 window.addEventListener('resize',sizeCanvas); sizeCanvas();
+const C1=[0,245,212],C2=[123,97,255],C3=[255,46,151];
+function lerp(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t));}
+function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
+
+function paint(ctx,cv,data,style){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  if(style==='Off')return;
+  const n=data.length;
+  if(style==='Bars'||style==='Blocks'){
+    const bars=style==='Blocks'?32:n, step=Math.floor(n/bars)||1, w=W/bars;
+    for(let i=0;i<bars;i++){
+      const v=data[i*step]/255, h=v*H;
+      const g=ctx.createLinearGradient(0,H,0,H-h);
+      g.addColorStop(0,'#00f5d4');g.addColorStop(.5,'#7b61ff');g.addColorStop(1,'#ff2e97');
+      ctx.fillStyle=g;
+      if(style==='Blocks'){const blocks=Math.ceil(v*12);for(let b=0;b<blocks;b++){const bh=H/13;ctx.fillRect(i*w+w*.12,H-(b+1)*bh+bh*.15,w*.76,bh*.7);}}
+      else ctx.fillRect(i*w+w*.15,H-h,w*.7,h);
+    }
+  } else if(style==='Wave'){
+    ctx.lineWidth=Math.max(2,W/240);ctx.beginPath();
+    for(let i=0;i<n;i++){const x=i/(n-1)*W;const y=H-(data[i]/255)*H;i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+    const g=ctx.createLinearGradient(0,0,W,0);g.addColorStop(0,'#00f5d4');g.addColorStop(.5,'#7b61ff');g.addColorStop(1,'#ff2e97');
+    ctx.strokeStyle=g;ctx.stroke();
+  } else if(style==='Mirror'){
+    const bars=48,step=Math.floor(n/bars)||1,w=W/bars,mid=H/2;
+    for(let i=0;i<bars;i++){
+      const v=data[i*step]/255,h=v*mid;
+      ctx.fillStyle=rgb(lerp(C1,C3,i/bars));
+      ctx.fillRect(i*w+w*.15,mid-h,w*.7,h);
+      ctx.fillRect(i*w+w*.15,mid,w*.7,h);
+    }
+  }
+}
 function drawViz(){
   requestAnimationFrame(drawViz);
   if(!analyser)return;
   const n=analyser.frequencyBinCount, data=new Uint8Array(n);
   analyser.getByteFrequencyData(data);
-  cctx.clearRect(0,0,canvas.width,canvas.height);
-  const bars=n, w=canvas.width/bars;
-  for(let i=0;i<bars;i++){
-    const h=(data[i]/255)*canvas.height;
-    const t=i/bars;
-    const g=cctx.createLinearGradient(0,canvas.height,0,canvas.height-h);
-    g.addColorStop(0,'#00f5d4'); g.addColorStop(.5,'#7b61ff'); g.addColorStop(1,'#ff2e97');
-    cctx.fillStyle=g;
-    cctx.fillRect(i*w+ w*.15, canvas.height-h, w*.7, h);
-  }
+  paint(cctx,canvas,data,vizStyle);
+  if($('fs').classList.contains('open')) paint(fsctx,fsCanvas,data,vizStyle);
 }
+function buildVizPick(){
+  const box=$('vizPick');box.innerHTML='';
+  VIZ_STYLES.forEach(s=>{
+    const b=document.createElement('button');b.textContent=s;b.className=s===vizStyle?'active':'';
+    b.onclick=()=>{vizStyle=s;localStorage.setItem('bb_viz',s);buildVizPick();};
+    box.appendChild(b);
+  });
+}
+buildVizPick();
 
 /* build EQ UI */
 function buildEq(){
@@ -515,9 +626,18 @@ function load(i,play,context){
   $('npTitle').textContent=disp(t);
   $('npMeta').textContent=`${t.artist} &#183; ${t.album}`;
   if(t.art){$('art').style.backgroundImage=`url('${t.art}')`;$('art').textContent='';}else{$('art').style.backgroundImage='';$('art').innerHTML=letter(disp(t));}
+  syncFS(t);
   if(play){initAudio();if(actx.state==='suspended')actx.resume();audio.play();}
   setMediaSession(t);
   render();
+}
+function syncFS(t){
+  $('fsTitle').textContent=disp(t);
+  $('fsMeta').innerHTML=`${t.artist} &#183; ${t.album}`;
+  if(t.art){$('fsArt').style.backgroundImage=`url('${t.art}')`;$('fsArt').textContent='';$('fs').style.setProperty('--fsglow','rgba(123,97,255,.35)');}
+  else{$('fsArt').style.backgroundImage='';$('fsArt').innerHTML=letter(disp(t));}
+  $('fsShuffle').classList.toggle('active',shuffle);
+  $('fsRepeat').classList.toggle('active',repeat!=='off');
 }
 
 /* ---------- Media Session (lock-screen controls) ---------- */
@@ -549,10 +669,10 @@ $('playBtn').onclick=()=>{
   initAudio(); if(actx.state==='suspended')actx.resume();
   audio.paused?audio.play():audio.pause();
 };
-function setPlayIcon(p){$('playIcon').innerHTML=p?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';}
+function setPlayIcon(p){const ic=p?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';$('playIcon').innerHTML=ic;$('fsPlayIcon').innerHTML=ic;}
 audio.onplay=()=>{setPlayIcon(true);if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';updatePositionState();render();};
 audio.onpause=()=>{setPlayIcon(false);if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';render();};
-audio.ontimeupdate=()=>{const p=audio.currentTime/audio.duration*100||0;$('fill').style.width=p+'%';$('knob').style.left=p+'%';$('cur').textContent=fmt(audio.currentTime);$('dur').textContent=fmt(audio.duration);};
+audio.ontimeupdate=()=>{const p=audio.currentTime/audio.duration*100||0;$('fill').style.width=p+'%';$('knob').style.left=p+'%';$('cur').textContent=fmt(audio.currentTime);$('dur').textContent=fmt(audio.duration);$('fsFill').style.width=p+'%';$('fsKnob').style.left=p+'%';$('fsCur').textContent=fmt(audio.currentTime);$('fsDur').textContent=fmt(audio.duration);};
 audio.onloadedmetadata=updatePositionState;
 audio.onended=()=>{if(repeat==='one'){audio.currentTime=0;audio.play();return;}nextTrack(true);};
 
@@ -567,8 +687,50 @@ function nextTrack(auto){
 function prevTrack(){const c=ctxOrder();if(!c.length)return;if(audio.currentTime>3){audio.currentTime=0;return;}let pi;if(shuffle){if(!order.length)buildOrder();pi=order[(order.indexOf(cur)-1+order.length)%order.length];}else{const pos=c.indexOf(cur);pi=pos>0?c[pos-1]:c[c.length-1];}load(pi,true);}
 $('nextBtn').onclick=()=>nextTrack(false);
 $('prevBtn').onclick=prevTrack;
-$('shuffleBtn').onclick=function(){shuffle=!shuffle;this.classList.toggle('active',shuffle);if(shuffle)buildOrder();};
-$('repeatBtn').onclick=function(){repeat=repeat==='off'?'all':repeat==='all'?'one':'off';this.classList.toggle('active',repeat!=='off');this.title='Repeat: '+repeat;this.style.position='relative';let b=this.querySelector('.badge');if(repeat==='one'){if(!b){b=document.createElement('span');b.className='badge';b.textContent='1';b.style.cssText='position:absolute;top:-2px;right:-2px;font-size:9px;background:var(--c1);color:#0a0e17;border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center;';this.appendChild(b);}}else if(b)b.remove();};
+function toggleShuffle(){shuffle=!shuffle;$('shuffleBtn').classList.toggle('active',shuffle);$('fsShuffle').classList.toggle('active',shuffle);if(shuffle)buildOrder();}
+function cycleRepeat(){
+  repeat=repeat==='off'?'all':repeat==='all'?'one':'off';
+  [$('repeatBtn'),$('fsRepeat')].forEach(btn=>{
+    btn.classList.toggle('active',repeat!=='off');btn.title='Repeat: '+repeat;btn.style.position='relative';
+    let b=btn.querySelector('.badge');
+    if(repeat==='one'){if(!b){b=document.createElement('span');b.className='badge';b.textContent='1';b.style.cssText='position:absolute;top:-2px;right:-2px;font-size:9px;background:var(--c1);color:#0a0e17;border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center;';btn.appendChild(b);}}
+    else if(b)b.remove();
+  });
+}
+$('shuffleBtn').onclick=toggleShuffle;
+$('repeatBtn').onclick=cycleRepeat;
+
+/* ---------- Fullscreen now-playing ---------- */
+function openFS(){if(cur===-1)return;syncFS(tracks[cur]);$('fs').classList.add('open');sizeCanvas();}
+function closeFS(){$('fs').classList.remove('open');$('fsQueue').classList.remove('open');}
+$('miniOpen').onclick=openFS;
+$('fsClose').onclick=closeFS;
+$('fsPlay').onclick=()=>$('playBtn').click();
+$('fsPrev').onclick=prevTrack;
+$('fsNext').onclick=()=>nextTrack(false);
+$('fsShuffle').onclick=toggleShuffle;
+$('fsRepeat').onclick=cycleRepeat;
+$('fsAddPl').onclick=()=>{if(cur>=0)openSheet(tracks[cur].id);};
+let fsSeek=false;const fsBar=$('fsBar');
+function fsSeekTo(x){const r=fsBar.getBoundingClientRect();const p=Math.min(1,Math.max(0,(x-r.left)/r.width));if(audio.duration)audio.currentTime=p*audio.duration;}
+fsBar.addEventListener('pointerdown',e=>{fsSeek=true;fsSeekTo(e.clientX);});
+window.addEventListener('pointermove',e=>{if(fsSeek)fsSeekTo(e.clientX);});
+window.addEventListener('pointerup',()=>fsSeek=false);
+$('fsQueueBtn').onclick=()=>{const q=$('fsQueue');q.classList.toggle('open');if(q.classList.contains('open'))buildFSQueue();};
+function buildFSQueue(){
+  const ul=$('fsQueueList');ul.innerHTML='';
+  const c=ctxOrder();
+  c.forEach(i=>{
+    const t=tracks[i];if(!t)return;
+    const li=document.createElement('li');li.className='row'+(i===cur?' playing':'');
+    const cover=t.art;
+    li.innerHTML=`<div class="thumb" style="${cover?`background-image:url('${cover}')`:''}">${cover?'':letter(disp(t))}</div>
+      <div class="info"><div class="name">${disp(t)}</div><div class="meta">${t.artist}</div></div>
+      <div class="right">${fmt(t.dur)}</div>`;
+    li.onclick=()=>{load(i,true,c);buildFSQueue();};
+    ul.appendChild(li);
+  });
+}
 
 document.querySelectorAll('.tab').forEach(tb=>{tb.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));tb.classList.add('active');view=tb.dataset.view;drill=null;render();};});
 
