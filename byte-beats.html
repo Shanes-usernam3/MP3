@@ -224,7 +224,7 @@
   <div id="viewArea"></div>
   <div class="empty" id="empty"><b>Your library is empty</b>Tap &#8220;Add files&#8221; to load audio from your phone. Artist &amp; album come from each file&#8217;s tags.</div>
 
-  <input type="file" id="fileInput" accept="audio/*" multiple hidden>
+  <input type="file" id="fileInput" multiple hidden>
 </main>
 
 <div class="sheet" id="sheet">
@@ -375,7 +375,10 @@ async function loadLibrary(){
 $('addBtn').onclick=()=>$('fileInput').click();
 $('fileInput').onchange=async e=>{
   if(!db){try{await openDB();}catch(_){}}
-  [...e.target.files].forEach(f=>{
+  const AUDIO_EXT=/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba|mp4|caf|aiff?|wma)$/i;
+  const picked=[...e.target.files].filter(f=>(f.type&&f.type.startsWith('audio'))||AUDIO_EXT.test(f.name));
+  if(e.target.files.length&&!picked.length){alert('Those files don\u2019t look like audio. Pick MP3, M4A or WAV files.');e.target.value='';return;}
+  picked.forEach(f=>{
     const id='s_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
     const url=URL.createObjectURL(f);
     const t={id,name:f.name.replace(/\.[^.]+$/,''),url,dur:0,artist:UNK_A,album:UNK_AL,title:'',art:''};
